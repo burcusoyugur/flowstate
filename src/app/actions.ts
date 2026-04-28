@@ -48,6 +48,7 @@ export async function createColumn(input: ColumnInsert) {
 export async function createBoard(input: { name: string }) {
   const { userId } = await auth();
   if (!userId) throw new Error("Unauthorized");
+  const user = await currentUser();
 
   const supabase = supabaseServer();
   const { data: board, error } = await supabase
@@ -58,17 +59,82 @@ export async function createBoard(input: { name: string }) {
 
   if (error) throw new Error(error.message);
 
-  const { error: columnsError } = await supabase.from("columns").insert([
-    { board_id: board.id, title: "To Do", order: 1000 },
-    { board_id: board.id, title: "In Progress", order: 2000 },
-    { board_id: board.id, title: "Done", order: 3000 },
-  ]);
+  const { data: createdColumns, error: columnsError } = await supabase
+    .from("columns")
+    .insert([
+      { board_id: board.id, title: "To Do", order: 1000 },
+      { board_id: board.id, title: "In Progress", order: 2000 },
+      { board_id: board.id, title: "Done", order: 3000 },
+    ])
+    .select("id, title");
   if (columnsError) throw new Error(columnsError.message);
+
+  const todoColumnId = (createdColumns ?? []).find((c: any) => c.title === "To Do")?.id;
+  if (todoColumnId) {
+    const { error: sampleTaskError } = await supabase.from("tasks").insert({
+      column_id: todoColumnId,
+      content: "Task 1",
+      description: "Click to edit details, then drag this task across columns.",
+      labels: [],
+      due_date: null,
+      order: 1000,
+      created_by_user_id: userId,
+      created_by_name:
+        user?.fullName ?? user?.username ?? user?.primaryEmailAddress?.emailAddress ?? null,
+      created_by_image: user?.imageUrl ?? null,
+    });
+    if (sampleTaskError) throw new Error(sampleTaskError.message);
+  }
 
   revalidatePath("/dashboard");
   revalidatePath(`/dashboard/${board.id}`);
   revalidatePath("/");
   return board;
+}
+
+export async function deleteBoard(boardId: string) {
+  const { userId } = await auth();
+  if (!userId) throw new Error("Unauthorized");
+
+  const supabase = supabaseServer();
+
+  // Ensure the board belongs to the current user.
+  const { data: board, error: boardLookupError } = await supabase
+    .from("boards")
+    .select("id")
+    .eq("id", boardId)
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (boardLookupError) throw new Error(boardLookupError.message);
+  if (!board) throw new Error("Board not found.");
+
+  // Delete child tasks/columns first for schemas without ON DELETE CASCADE.
+  const { data: boardColumns, error: columnsLookupError } = await supabase
+    .from("columns")
+    .select("id")
+    .eq("board_id", boardId);
+  if (columnsLookupError) throw new Error(columnsLookupError.message);
+
+  const columnIds = (boardColumns ?? []).map((c: any) => c.id).filter(Boolean);
+  if (columnIds.length > 0) {
+    const { error: tasksDeleteError } = await supabase.from("tasks").delete().in("column_id", columnIds);
+    if (tasksDeleteError) throw new Error(tasksDeleteError.message);
+  }
+
+  const { error: columnsDeleteError } = await supabase.from("columns").delete().eq("board_id", boardId);
+  if (columnsDeleteError) throw new Error(columnsDeleteError.message);
+
+  const { error: boardDeleteError } = await supabase
+    .from("boards")
+    .delete()
+    .eq("id", boardId)
+    .eq("user_id", userId);
+  if (boardDeleteError) throw new Error(boardDeleteError.message);
+
+  revalidatePath("/");
+  revalidatePath("/dashboard");
+  revalidatePath("/", "layout");
+  revalidatePath("/dashboard", "layout");
 }
 
 export async function renameColumn(columnId: string, title: string) {

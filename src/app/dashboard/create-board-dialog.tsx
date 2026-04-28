@@ -9,9 +9,11 @@ import type { Board } from "../types";
 export function CreateBoardDialog({
   triggerClassName,
   triggerLabel,
+  triggerId,
 }: {
   triggerClassName?: string;
   triggerLabel: string;
+  triggerId?: string;
 }) {
   const router = useRouter();
   const [open, setOpen] = React.useState(false);
@@ -44,6 +46,7 @@ export function CreateBoardDialog({
     <Dialog.Root open={open} onOpenChange={setOpen}>
       <Dialog.Trigger asChild>
         <button
+          id={triggerId}
           type="button"
           className={
             triggerClassName ??

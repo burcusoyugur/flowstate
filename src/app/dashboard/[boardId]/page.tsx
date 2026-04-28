@@ -7,6 +7,7 @@ import { DashboardClient } from "../dashboard-client";
 import { auth } from "@clerk/nextjs/server";
 import { UserButton } from "@clerk/nextjs";
 import { Zap } from "lucide-react";
+import { WelcomeTour } from "@/components/WelcomeTour";
 
 export const dynamic = "force-dynamic";
 export const fetchCache = "force-no-store";
@@ -89,6 +90,7 @@ export default async function BoardPage({
   return (
     <div className="min-h-dvh bg-[#fafafa] text-slate-900">
       <main className="w-full px-4 py-6">
+        <WelcomeTour />
         <div className="mb-4 flex items-center justify-between gap-4 border-b border-slate-200 bg-white px-4 py-3">
           <div className="flex items-center gap-4">
             <div className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-rose-50 text-rose-500">
@@ -97,7 +99,7 @@ export default async function BoardPage({
             <h1 className="text-xl font-bold tracking-tighter text-slate-800">FlowState</h1>
             <DashboardClient boards={boardsList} activeBoardId={boardId} />
           </div>
-          <div className="flex items-center gap-3">
+          <div id="user-button" className="flex items-center gap-3">
             <UserButton appearance={{ elements: { avatarBox: "h-9 w-9" } }} />
           </div>
         </div>

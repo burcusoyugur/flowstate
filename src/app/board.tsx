@@ -36,6 +36,7 @@ import {
 } from "./actions";
 import { useRouter } from "next/navigation";
 import type { Column, Task } from "./types";
+import Swal from "sweetalert2";
 
 type BoardData = {
   columns: Column[];
@@ -98,6 +99,47 @@ function toDateInputValue(raw?: string | null) {
 
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+const swalBase = {
+  background: "#ffffff",
+  color: "#1a1a1a",
+  confirmButtonColor: "#e11d48",
+  cancelButtonColor: "#f1f5f9",
+  reverseButtons: true,
+  buttonsStyling: false,
+  customClass: {
+    popup: "rounded-2xl border border-slate-200 shadow-2xl",
+    title: "text-slate-900 font-semibold tracking-tight",
+    htmlContainer: "text-sm text-slate-600",
+    confirmButton:
+      "rounded-full bg-rose-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-rose-700",
+    cancelButton:
+      "rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50",
+  },
+} as const;
+
+async function confirmDangerAction(title: string, text: string, confirmButtonText: string) {
+  const result = await Swal.fire({
+    ...swalBase,
+    icon: "warning",
+    title,
+    text,
+    showCancelButton: true,
+    confirmButtonText,
+    cancelButtonText: "Cancel",
+  });
+  return result.isConfirmed;
+}
+
+async function showActionError(text: string) {
+  await Swal.fire({
+    ...swalBase,
+    icon: "error",
+    title: "Action failed",
+    text,
+    confirmButtonText: "OK",
+  });
 }
 
 function isBelowOverMidline(event: DragOverEvent | DragEndEvent) {
@@ -209,13 +251,13 @@ function TaskCardVisual({ task, isOverlay }: { task: Task; isOverlay?: boolean }
 
 function SortableTaskCard({
   task,
-  onChanged,
+  onDeleteTask,
   onOpenTask,
   isAnyDragging,
   isDropSettling,
 }: {
   task: Task;
-  onChanged: () => void;
+  onDeleteTask: (task: Task) => Promise<void>;
   onOpenTask: (task: Task) => void;
   isAnyDragging: boolean;
   isDropSettling: boolean;
@@ -243,6 +285,7 @@ function SortableTaskCard({
       ref={setNodeRef}
       style={style}
       className="relative rounded-lg border border-slate-200 bg-white p-3 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md hover:ring-1 hover:ring-rose-200 hover:border-rose-300 cursor-pointer"
+      data-tour="task-open"
       onClick={() => {
         // Prevent accidental modal-open when a drag just occurred.
         if (isAnyDragging || isDragging) return;
@@ -315,6 +358,7 @@ function SortableTaskCard({
             onClick={(e) => e.stopPropagation()}
             title="Drag task"
             data-drag-handle="true"
+              data-tour="task-drag"
             aria-label="Drag task"
           >
             <svg
@@ -349,9 +393,7 @@ function SortableTaskCard({
             className="rounded-md px-2 py-1 text-xs text-red-600 hover:bg-red-50"
             onClick={async (e) => {
               e.stopPropagation();
-              if (!window.confirm("Delete this task?")) return;
-              await deleteTask(task.id);
-              onChanged();
+              await onDeleteTask(task);
             }}
           >
             Del
@@ -369,7 +411,7 @@ function SortableColumnCard({
   onAddTask,
   onRenameColumn,
   onDeleteColumn,
-  onChanged,
+  onDeleteTask,
   onOpenTask,
   isAnyDragging,
   isDropSettling,
@@ -379,8 +421,8 @@ function SortableColumnCard({
   taskIds: string[];
   onAddTask: (columnId: string, content: string) => Promise<void>;
   onRenameColumn: (columnId: string, title: string) => Promise<void>;
-  onDeleteColumn: (columnId: string) => void;
-  onChanged: () => void;
+  onDeleteColumn: (columnId: string) => Promise<void>;
+  onDeleteTask: (task: Task) => Promise<void>;
   onOpenTask: (task: Task) => void;
   isAnyDragging: boolean;
   isDropSettling: boolean;
@@ -452,6 +494,7 @@ function SortableColumnCard({
             {...listeners}
             onClick={(e) => e.stopPropagation()}
             title="Drag column"
+            data-tour="column-drag"
             aria-label="Drag column"
           >
             <svg
@@ -570,7 +613,7 @@ function SortableColumnCard({
               <SortableTaskCard
                 key={t.id}
                 task={t}
-                onChanged={onChanged}
+                onDeleteTask={onDeleteTask}
                 onOpenTask={onOpenTask}
                 isAnyDragging={isAnyDragging}
                 isDropSettling={isDropSettling}
@@ -639,7 +682,7 @@ function SortableColumnCard({
               </div>
             ) : (
               <button
-                className="w-full rounded-lg border border-transparent bg-transparent px-3 py-2 text-sm text-slate-700 transition hover:bg-slate-100"
+                className="tour-add-task-btn w-full rounded-lg border border-transparent bg-transparent px-3 py-2 text-sm text-slate-700 transition hover:bg-slate-100"
                 onClick={() => setIsAddingTask(true)}
                 type="button"
               >
@@ -835,10 +878,66 @@ export function Board({ initial, boardId }: { initial: BoardData; boardId: strin
   };
 
   const onDeleteColumn = async (columnId: string) => {
-    if (!window.confirm("Delete this column? (This may also remove its tasks depending on your DB)"))
-      return;
-    await deleteColumn(columnId);
-    refreshBoard();
+    const confirmed = await confirmDangerAction(
+      "Delete this column?",
+      "This action may remove all tasks inside this column depending on your database rules.",
+      "Delete Column",
+    );
+    if (!confirmed) return;
+
+    const prevColumns = columns;
+    const prevTasksByColumn = tasksByColumn;
+
+    setColumns((prev) => prev.filter((c) => c.id !== columnId));
+    setTasksByColumn((prev) => {
+      const next = { ...prev };
+      delete next[columnId];
+      return next;
+    });
+
+    if (editingTask && editingTask.column_id === columnId) {
+      closeTaskModal();
+    }
+
+    try {
+      await deleteColumn(columnId);
+      refreshBoard();
+    } catch (error) {
+      setColumns(prevColumns);
+      setTasksByColumn(prevTasksByColumn);
+      await showActionError(error instanceof Error ? error.message : "Column could not be deleted.");
+    }
+  };
+
+  const onDeleteTask = async (task: Task) => {
+    const confirmed = await confirmDangerAction(
+      "Delete this task?",
+      "This task will be permanently removed.",
+      "Delete Task",
+    );
+    if (!confirmed) return;
+
+    const columnId = task.column_id;
+    const prevColumnTasks = tasksByColumn[columnId] ?? [];
+    setTasksByColumn((prev) => {
+      const nextList = (prev[columnId] ?? []).filter((t) => String(t.id) !== String(task.id));
+      return {
+        ...prev,
+        [columnId]: reorderOrders(nextList).map((t) => ({ ...t, column_id: columnId })),
+      };
+    });
+
+    if (editingTask?.id === task.id) {
+      closeTaskModal();
+    }
+
+    try {
+      await deleteTask(task.id);
+      refreshBoard();
+    } catch (error) {
+      setTasksByColumn((prev) => ({ ...prev, [columnId]: prevColumnTasks }));
+      await showActionError(error instanceof Error ? error.message : "Task could not be deleted.");
+    }
   };
 
   const onDragStart = (event: DragStartEvent) => {
@@ -1225,7 +1324,7 @@ export function Board({ initial, boardId }: { initial: BoardData; boardId: strin
                 onAddTask={onAddTask}
                 onRenameColumn={onRenameColumn}
                 onDeleteColumn={onDeleteColumn}
-                onChanged={refreshBoard}
+                onDeleteTask={onDeleteTask}
                 onOpenTask={openTaskModal}
                 isAnyDragging={Boolean(activeId)}
                 isDropSettling={isDropSettling}
