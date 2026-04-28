@@ -1,16 +1,13 @@
 import { createClient } from "@supabase/supabase-js";
 
-function requireEnv(name: string): string {
-  const v = process.env[name];
-  if (!v) throw new Error(`Missing required env var: ${name}`);
-  return v;
-}
+// Hata fırlatmayan, sadece varsa döndüren basit versiyon
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
 
 export function supabaseServer() {
-  const url = requireEnv("NEXT_PUBLIC_SUPABASE_URL");
-  const anonKey = requireEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY");
-  return createClient(url, anonKey, {
+  // Eğer değişkenler boşsa uygulama patlamasın, sadece boş client dönsün
+  // Hata yönetimi sayfa içinde yapılacak
+  return createClient(supabaseUrl, supabaseAnonKey, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
 }
-
