@@ -10,10 +10,12 @@ export function CreateBoardDialog({
   triggerClassName,
   triggerLabel,
   triggerId,
+  triggerIcon,
 }: {
   triggerClassName?: string;
   triggerLabel: string;
   triggerId?: string;
+  triggerIcon?: React.ReactNode;
 }) {
   const router = useRouter();
   const [open, setOpen] = React.useState(false);
@@ -53,6 +55,7 @@ export function CreateBoardDialog({
             "rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50"
           }
         >
+          {triggerIcon}
           {triggerLabel}
         </button>
       </Dialog.Trigger>
